@@ -1,0 +1,121 @@
+QUERYS SQL SEVER
+
+select * from Mov_Financeiro_Faturas ff(Nolock)
+inner join Cad_Tipos_MovFinanceiro tf ON ff.Ctrl_TipoMovFinanc = tf.Ctrl_TipoMovFinanc
+inner join Mov_Alteracoes_Limite al ON ff.Ctrl_ClienteCartao = al.Ctrl_ClienteCartao and convert(date, al.Data_Insercao) >= convert(date, ff.Data)
+where tf.Ctrl_TipoMovFinanc = 1
+AND ff.Data >= '2020-08-01'
+AND ff.Valor > 0
+and NOT EXISTS(select * from Mov_Financeiro_Faturas ff(Nolock)
+inner join Cad_Tipos_MovFinanceiro tf ON ff.Ctrl_TipoMovFinanc = tf.Ctrl_TipoMovFinanc
+inner join Mov_Alteracoes_Limite al ON ff.Ctrl_ClienteCartao = al.Ctrl_ClienteCartao and convert(date, al.Data_Insercao) = convert(date, ff.Data)
+where tf.Ctrl_TipoMovFinanc in(2, 3))
+
+
+SELECT
+	cc.Ctrl_Cliente as 'ID do Cliente',
+	cc.Nome as 'Nome do Cliente',
+	cc.Situacao_trab as 'Situação trabalhista',
+	Regiao.Regiao as 'Região do Cliente',
+	lca.Limite_Liberado as 'Limite Liberado para o Cliente',
+	lca.Score as 'Score do Cliente',
+	ca.Contrato as 'Numero do Contrato',
+	ca.Data_Geracao as 'Data de GEração do Contrato'
+FROM Cad_Contratos_Agil ca (NOLOCK)
+INNER JOIN Cad_Clientes cc (NOLOCK) ON ca.CPF = cc.CPF
+OUTER APPLY(
+	SELECT TOP 1 * FROM Log_Consultas_Agil l WHERE cc.Ctrl_Cliente = l.Ctrl_Cliente
+	ORDER BY Ctrl_Log DESC
+) lca
+OUTER APPLY(
+	SELECT TOP 1 Regiao FROM Cad_Cidades ci(NOLOCK)
+	INNER JOIN Cad_Estados (Nolock) ce ON ci.Estado = ce.Estado
+	WHERE ci.Ctrl_Cidade = cc.Ctrl_Cidade
+) Regiao
+WHERE ca.Status >= 2
+
+
+	BEGIN
+		Declare @P_Tamanho_Pagina INT = @P_length,
+				@P_Numero_Pagina INT = 1;
+
+		IF @P_start = 0 SET @P_start = 1
+		SET @P_Numero_Pagina = FLOOR (@P_Start/@P_length)+1
+		select cc.Nome, cci.Cidade, cci.Estado, cc.CPF as 'CPF',cc.Situacao_trab, cds.Data_Ocorrencia, ccs.Data_Consulta, cds.Informante, 
+		ctds.descricao_tipo_debito, SUM(cds.Valor) as 'Valor', Paginas = CEILING((COUNT(*) OVER()) / CONVERT(FLOAT, @P_Tamanho_Pagina))
+		FROM Cad_Consultas_Sophus  (nolock) ccs 
+		inner join Cad_Clientes cc with (nolock) on cc.CPF = ccs.CPF 
+		inner join Cad_Cidades cci with (nolock) on cci.Ctrl_Cidade = cc.Ctrl_Cidade 
+		inner join Cad_Debitos_Sophus cds with (nolock) on cds.Ctrl_Consulta_Sophus  = ccs.Ctrl_Consulta_Sophus 
+		inner join Cad_Tipo_Debito_Sophus ctds with (nolock) on ctds.sigla_tipo_debito = cds.Tipo_Debito 
+		where ccs.Tipo IS NULL 
+		and ccs.Status = 2
+		and ccs.Data_Consulta BETWEEN @P_dataIniConsulta AND CONVERT(DATETIME, CONVERT(VARCHAR(10), @P_dataFimConsulta ) + ' 23:59:59:999')
+		group by cc.Nome, cci.Cidade, cci.Estado, cc.CPF,cc.Situacao_trab, cds.Data_Ocorrencia, ccs.Data_Consulta, cds.Informante, ctds.descricao_tipo_debito, cds.Valor
+		order by ccs.Data_Consulta desc
+		OFFSET @P_Tamanho_Pagina * (@P_Numero_Pagina - 1) ROWS
+		FETCH NEXT @P_Tamanho_Pagina ROWS ONLY;
+	
+	END
+	
+	SELECT TOP 1 
+			Ctrl_Agendamento_Push, 
+			Mensagem, 
+			Limite_Sem_Extra, 
+			 Dia_Vencimento,
+			 Data_Maximo_Cadastro,
+			 Tipo,
+			cidade_push, 
+			status_cartao_push,
+			estado_push
+		FROM Cad_Agendamento_Push (NOLOCK)
+		WHERE ISNULL(Data_Final, '') = ''
+		AND DATEDIFF(MINUTE, Horario_Agendamento, GETDATE()) > 0
+		AND ISNULL(Processando, 0) = 0
+		AND NOT EXISTS (
+			SELECT * FROM Cad_Agendamento_Push (NOLOCK)
+			WHERE ISNULL(Data_Final, '') = ''
+			AND Processando = 1
+		)
+		ORDER BY Data_Inicial ASC;
+		
+		
+	USE [Card_Brasilcard]
+GO
+/****** Object:  StoredProcedure [dbo].[WS_P_Comissao_Ficha_Cartao]    Script Date: 03/11/2020 10:43:17 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+CREATE PROCEDURE [dbo].[WS_P_Comissao_Ficha_Cartao]
+	@P_Acao AS VARCHAR (10),
+	@P_CPF_Funcionario AS VARCHAR(14) = NULL,
+	@P_Nome_Funcionario AS VARCHAR(40) = NULL,
+	@P_N_Cartao AS VARCHAR (MAX) = NULL
+
+AS
+BEGIN
+	if @P_Acao = 'ACF' /*Atualiza comissão ficha para segundo cartão com numero gerado manualmente*/
+		BEGIN
+					
+			DECLARE @Ctrl_Funcionario INT
+					
+			SELECT TOP 1 @Ctrl_Funcionario = Ctrl_Funcionario FROM Cad_Empresas_Cad_Funcionarios (NOLOCK) WHERE CPF = @P_CPF_Funcionario
+					
+			if @Ctrl_Funcionario IS NULL
+			BEGIN
+				INSERT INTO Cad_Empresas_Cad_Funcionarios (CPF, Nome) SELECT @P_CPF_Funcionario, @P_Nome_Funcionario
+				SELECT @Ctrl_Funcionario = SCOPE_IDENTITY()
+			END 
+
+			UPDATE Cad_Clientes_Cartao SET Ctrl_Funcionario = @Ctrl_Funcionario
+			WHERE N_Cartao = @P_N_Cartao
+
+			SELECT @@ROWCOUNT as 'resultado'
+
+	END
+END
+
+
