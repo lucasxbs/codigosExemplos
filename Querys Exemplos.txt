@@ -11,6 +11,7 @@ inner join Cad_Tipos_MovFinanceiro tf ON ff.Ctrl_TipoMovFinanc = tf.Ctrl_TipoMov
 inner join Mov_Alteracoes_Limite al ON ff.Ctrl_ClienteCartao = al.Ctrl_ClienteCartao and convert(date, al.Data_Insercao) = convert(date, ff.Data)
 where tf.Ctrl_TipoMovFinanc in(2, 3))
 
+*****************************************************************************************//**********************************************************************************
 
 SELECT
 	cc.Ctrl_Cliente as 'ID do Cliente',
@@ -34,6 +35,7 @@ OUTER APPLY(
 ) Regiao
 WHERE ca.Status >= 2
 
+*****************************************************************************************//**********************************************************************************
 
 	BEGIN
 		Declare @P_Tamanho_Pagina INT = @P_length,
@@ -58,6 +60,8 @@ WHERE ca.Status >= 2
 	
 	END
 	
+*****************************************************************************************//**********************************************************************************
+	
 	SELECT TOP 1 
 			Ctrl_Agendamento_Push, 
 			Mensagem, 
@@ -79,8 +83,8 @@ WHERE ca.Status >= 2
 		)
 		ORDER BY Data_Inicial ASC;
 		
-		
-	USE [Card_Brasilcard]
+*****************************************************************************************//**********************************************************************************		
+USE [Card_Brasilcard]
 GO
 /****** Object:  StoredProcedure [dbo].[WS_P_Comissao_Ficha_Cartao]    Script Date: 03/11/2020 10:43:17 ******/
 SET ANSI_NULLS ON
